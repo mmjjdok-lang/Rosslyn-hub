@@ -1,4 +1,4 @@
--- [[ MONOCHROME GLASS UI LIBRARY - v2 | ICONS + SOUND + SLIDER + LABEL + CONFIG + NOTIFY ]] --
+-- [[ MONOCHROME GLASS UI LIBRARY - v3 | ICONS + SOUND + SLIDER + LABEL + CONFIG + NOTIFY + FLOATING BUTTONS ]] --
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -12,63 +12,104 @@ local Library = {}
 local FolderName = "MonoGlassUI"
 local ConfigFolder = FolderName .. "/Configs"
 
-local Flags = {}    -- قيم الإعدادات الحالية (تتحدث مع كل تغيير)
-local Setters = {}  -- دوال تحديث كل عنصر عند تحميل إعدادات
+local Flags = {}          -- قيم الإعدادات (توجل، سلايدر، مكان الأزرار العائمة)
+local Setters = {}        -- دوال تحديث كل عنصر عند تحميل إعدادات
+Library.ConfigLoaded = false  -- يصير true بعد ما تحمّل إعدادات محفوظة
 
 local function EnsureFolders()
-    if not makefolder then return end
+    if not makefolder then return false end
     if not (isfolder and isfolder(FolderName)) then
         pcall(makefolder, FolderName)
     end
     if not (isfolder and isfolder(ConfigFolder)) then
         pcall(makefolder, ConfigFolder)
     end
+    return true
 end
 
--- حفظ الإعدادات: MonoGlassUI/Configs/<name>.json
+-- حفظ الإعدادات داخل: MonoGlassUI/Configs/<name>.json
+-- يتحقق من الكتابة بقراءة الملف مرة ثانية قبل ما يقول "تم"
 function Library:SaveConfig(name)
     name = name or "default"
     if not writefile then
-        warn("[MonoGlassUI] الـ executor لا يدعم writefile")
+        Library:Notify({ Title = "Config", Message = "الـ executor لا يدعم الحفظ", Duration = 4 })
         return false, "no writefile"
     end
+
     EnsureFolders()
-    local ok, err = pcall(function()
-        writefile(ConfigFolder .. "/" .. name .. ".json", HttpService:JSONEncode(Flags))
+    local path = ConfigFolder .. "/" .. name .. ".json"
+
+    local okEncode, json = pcall(function()
+        return HttpService:JSONEncode(Flags)
     end)
-    if ok then
+    if not okEncode then
+        Library:Notify({ Title = "Config", Message = "فشل تجهيز البيانات", Duration = 4 })
+        return false, json
+    end
+
+    local okWrite, errWrite = pcall(writefile, path, json)
+    if not okWrite then
+        Library:Notify({ Title = "Config", Message = "فشل الكتابة: " .. tostring(errWrite), Duration = 4 })
+        return false, errWrite
+    end
+
+    -- تحقق فعلي: هل الملف موجود ومحتواه صح؟
+    local verified = false
+    if isfile and isfile(path) and readfile then
+        local okRead, content = pcall(readfile, path)
+        verified = okRead and content == json
+    else
+        verified = true -- executor ما يدعم التحقق، نعتبر الكتابة نجحت
+    end
+
+    if verified then
         Library:Notify({ Title = "Config", Message = "تم حفظ الإعدادات: " .. name, Duration = 3 })
     else
-        Library:Notify({ Title = "Config", Message = "فشل الحفظ", Duration = 3 })
+        Library:Notify({ Title = "Config", Message = "الحفظ ما تأكد من الملف", Duration = 4 })
     end
-    return ok, err
+    return verified, path
 end
 
--- تحميل الإعدادات وتطبيقها على العناصر
+-- تحميل الإعدادات وتطبيقها (تنفع قبل أو بعد إنشاء العناصر)
 function Library:LoadConfig(name)
     name = name or "default"
     if not (readfile and isfile) then
-        warn("[MonoGlassUI] الـ executor لا يدعم readfile")
+        Library:Notify({ Title = "Config", Message = "الـ executor لا يدعم التحميل", Duration = 4 })
         return false, "no readfile"
     end
+
     local path = ConfigFolder .. "/" .. name .. ".json"
     if not isfile(path) then
-        Library:Notify({ Title = "Config", Message = "ما لقيت الإعدادات: " .. name, Duration = 3 })
+        Library:Notify({ Title = "Config", Message = "ما لقيت: " .. name, Duration = 3 })
         return false, "not found"
     end
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(readfile(path))
-    end)
-    if not ok then
-        return false, data
+
+    local okRead, content = pcall(readfile, path)
+    if not okRead then
+        return false, content
     end
+
+    local okDecode, data = pcall(function()
+        return HttpService:JSONDecode(content)
+    end)
+    if not okDecode or type(data) ~= "table" then
+        Library:Notify({ Title = "Config", Message = "ملف الإعدادات تالف", Duration = 4 })
+        return false, "bad json"
+    end
+
     for flag, value in pairs(data) do
         Flags[flag] = value
+    end
+    Library.ConfigLoaded = true
+
+    -- تطبيق القيم على العناصر الموجودة حالياً
+    for flag, value in pairs(data) do
         if Setters[flag] then
             pcall(Setters[flag], value)
         end
     end
-    Library:Notify({ Title = "Config", Message = "تم تحميل الإعدادات: " .. name, Duration = 3 })
+
+    Library:Notify({ Title = "Config", Message = "تم تحميل: " .. name, Duration = 3 })
     return true
 end
 
@@ -137,11 +178,10 @@ end
 
 -- حماية الواجهة وتجنب التكرار
 local ParentGui = (gethui and gethui()) or CoreGui
-if ParentGui:FindFirstChild("MonoGlassUI") then
-    ParentGui:FindFirstChild("MonoGlassUI"):Destroy()
-end
-if ParentGui:FindFirstChild("MonoGlassNotify") then
-    ParentGui:FindFirstChild("MonoGlassNotify"):Destroy()
+for _, n in ipairs({ "MonoGlassUI", "MonoGlassNotify", "MonoGlassFloat" }) do
+    if ParentGui:FindFirstChild(n) then
+        ParentGui:FindFirstChild(n):Destroy()
+    end
 end
 
 -- ================================
@@ -189,14 +229,12 @@ function Library:Notify(opts)
     local Duration = opts.Duration or 4
     local holder = EnsureNotifyHolder()
 
-    -- الحاوية: تقص الشعار أثناء النزول والطلوع
     local wrapper = Instance.new("Frame")
     wrapper.Size = UDim2.new(1, 0, 0, 72)
     wrapper.BackgroundTransparency = 1
     wrapper.ClipsDescendants = true
     wrapper.Parent = holder
 
-    -- البطاقة: تنزل من الشريط العلوي
     local card = Instance.new("Frame")
     card.Size = UDim2.new(1, 0, 0, 70)
     card.Position = UDim2.new(0, 0, 0, -80)
@@ -238,7 +276,6 @@ function Library:Notify(opts)
     msgLabel.TextTruncate = Enum.TextTruncate.AtEnd
     msgLabel.Parent = card
 
-    -- شريط الوقت: يتناقص حتى يختفي الشعار
     local progressBg = Instance.new("Frame")
     progressBg.Size = UDim2.new(1, -28, 0, 3)
     progressBg.Position = UDim2.new(0, 14, 1, -10)
@@ -260,17 +297,14 @@ function Library:Notify(opts)
     fillCorner.CornerRadius = UDim.new(1, 0)
     fillCorner.Parent = progressFill
 
-    -- نزول من الأعلى
     TweenService:Create(card, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
         Position = UDim2.new(0, 0, 0, 0)
     }):Play()
 
-    -- الوقت
     TweenService:Create(progressFill, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {
         Size = UDim2.new(0, 0, 1, 0)
     }):Play()
 
-    -- بعد انتهاء الوقت: يطلع للأعلى ويختفي
     task.delay(Duration, function()
         local out = TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
             Position = UDim2.new(0, 0, 0, -80),
@@ -314,29 +348,35 @@ local function CreateRipple(button)
     end)
 end
 
--- نظام السحب الاحترافي
-local function MakeDraggable(dragHandle, mainFrame)
-    local dragging, dragInput, dragStart, startPos
+-- نظام السحب (مع callbacks للبداية والحركة والنهاية)
+local function MakeDraggable(dragHandle, mainFrame, cb)
+    cb = cb or {}
+    local dragging, dragStart, startPos
+
     dragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = mainFrame.Position
-            input.Changed:Connect(function()
+            if cb.onBegin then cb.onBegin() end
+
+            local endedConn
+            endedConn = input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
+                    local delta = input.Position - dragStart
+                    local finalPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                    if cb.onEnd then cb.onEnd(finalPos, delta.Magnitude) end
+                    endedConn:Disconnect()
                 end
             end)
         end
     end)
-    dragHandle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
+
     UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
+            if cb.onMove then cb.onMove(delta.Magnitude) end
             TweenService:Create(mainFrame, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             }):Play()
@@ -344,9 +384,91 @@ local function MakeDraggable(dragHandle, mainFrame)
     end)
 end
 
+-- ================================
+-- الأزرار العائمة (Floating Buttons)
+-- ================================
+local FloatGui = nil
+local FloatCount = 0
+
+local function EnsureFloatGui()
+    if FloatGui and FloatGui.Parent then return FloatGui end
+    FloatGui = Instance.new("ScreenGui")
+    FloatGui.Name = "MonoGlassFloat"
+    FloatGui.ResetOnSpawn = false
+    FloatGui.DisplayOrder = 100
+    FloatGui.Parent = ParentGui
+    return FloatGui
+end
+
+-- ينشئ زر عائم مخفي، مكانه يتحفظ مع الإعدادات
+local function CreateFloatingButton(Flag, Text, Callback)
+    local gui = EnsureFloatGui()
+    local posKey = "__pos_" .. Flag
+
+    local btn = Instance.new("TextButton")
+    btn.Name = "Float_" .. Flag
+    btn.Size = UDim2.new(0, 90, 0, 36)
+    btn.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+    btn.BackgroundTransparency = 0.1
+    btn.Text = Text
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 13
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.AutoButtonColor = false
+    btn.Visible = false
+    btn.Parent = gui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = btn
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.4
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Parent = btn
+
+    -- مكان البداية: المحفوظ إذا تحمّلت الإعدادات، غير كذا مكان افتراضي
+    local saved = Flags[posKey]
+    if Library.ConfigLoaded and type(saved) == "table" then
+        btn.Position = UDim2.new(saved.xs, saved.xo, saved.ys, saved.yo)
+    else
+        btn.Position = UDim2.new(0.5, -45, 0.2 + (FloatCount * 0.1), 0)
+    end
+    FloatCount = FloatCount + 1
+
+    Setters[posKey] = function(v)
+        if type(v) == "table" then
+            btn.Position = UDim2.new(v.xs, v.xo, v.ys, v.yo)
+        end
+    end
+
+    local dragged = false
+    MakeDraggable(btn, btn, {
+        onBegin = function() dragged = false end,
+        onMove = function(dist) dragged = dist > 6 end,
+        onEnd = function(pos)
+            Flags[posKey] = {
+                xs = pos.X.Scale, xo = pos.X.Offset,
+                ys = pos.Y.Scale, yo = pos.Y.Offset,
+            }
+        end,
+    })
+
+    btn.MouseButton1Click:Connect(function()
+        if dragged then return end
+        CreateRipple(btn)
+        if Callback then Callback() end
+    end)
+
+    return btn
+end
+
+-- ================================
+-- الواجهة
+-- ================================
 function Library:CreateWindow(Config)
     local TitleText = Config.Title or "PREMIUM HUB"
-    local SubTitleText = Config.SubTitle or "v2.0"
+    local SubTitleText = Config.SubTitle or "v3.0"
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "MonoGlassUI"
@@ -424,7 +546,6 @@ function Library:CreateWindow(Config)
     })
     BorderGradient.Parent = MainStroke
 
-    -- حركة تدرج الحواف السريعة
     task.spawn(function()
         local rot = 0
         while ScreenGui.Parent do
@@ -435,7 +556,6 @@ function Library:CreateWindow(Config)
         end
     end)
 
-    -- الشريط العلوي (Topbar)
     local Topbar = Instance.new("Frame")
     Topbar.Name = "Topbar"
     Topbar.Size = UDim2.new(1, 0, 0, 42)
@@ -476,7 +596,6 @@ function Library:CreateWindow(Config)
     Divider.BorderSizePixel = 0
     Divider.Parent = MainFrame
 
-    -- قائمة التبويبات الجانبية (Tabs Sidebar)
     local TabSidebar = Instance.new("ScrollingFrame")
     TabSidebar.Name = "TabSidebar"
     TabSidebar.Size = UDim2.new(0, 140, 1, -52)
@@ -492,7 +611,6 @@ function Library:CreateWindow(Config)
     TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
     TabListLayout.Parent = TabSidebar
 
-    -- حاوية المحتوى (Pages Container)
     local PagesContainer = Instance.new("Frame")
     PagesContainer.Name = "PagesContainer"
     PagesContainer.Size = UDim2.new(1, -162, 1, -52)
@@ -500,7 +618,6 @@ function Library:CreateWindow(Config)
     PagesContainer.BackgroundTransparency = 1
     PagesContainer.Parent = MainFrame
 
-    -- تشغيل / إخفاء الواجهة بزر Open Button
     local IsOpen = true
     local DefaultSize = MainFrame.Size
     OpenBtn.MouseButton1Click:Connect(function()
@@ -527,7 +644,6 @@ function Library:CreateWindow(Config)
     local WindowFunctions = {}
     local FirstTab = true
 
-    -- اختصار: Window:Notify(...)
     function WindowFunctions:Notify(opts)
         Library:Notify(opts)
     end
@@ -551,7 +667,6 @@ function Library:CreateWindow(Config)
         TabCorner.CornerRadius = UDim.new(0, 8)
         TabCorner.Parent = TabBtn
 
-        -- أيقونة التبويب (تظهر فقط إذا الأيقونة موجودة)
         local TabIcon = nil
         if iconData then
             TabIcon = Instance.new("ImageLabel")
@@ -611,7 +726,7 @@ function Library:CreateWindow(Config)
 
         local Elements = {}
 
-        -- 1. نظام Label (نص توضيحي)
+        -- 1. Label (نص توضيحي)
         function Elements:AddLabel(Text)
             local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, 0, 0, 28)
@@ -624,7 +739,7 @@ function Library:CreateWindow(Config)
             Label.Parent = Page
         end
 
-        -- 2. نظام Button (زر عادي)
+        -- 2. Button (زر عادي)
         function Elements:AddButton(Text, Callback)
             local Btn = Instance.new("TextButton")
             Btn.Size = UDim2.new(1, 0, 0, 38)
@@ -658,11 +773,15 @@ function Library:CreateWindow(Config)
             end)
         end
 
-        -- 3. نظام Toggle (زر تفعيل)
-        -- دائماً يبدأ OFF عند تشغيل السكربت. تقدر تفعله يدوياً أو تحمّل إعدادات محفوظة.
+        -- 3. Toggle (زر تفعيل)
+        -- يبدأ OFF دائماً، إلا إذا تحمّلت إعدادات محفوظة (LoadConfig)
         function Elements:AddToggle(Text, _DefaultState, Callback, Flag)
             Flag = Flag or Text
+
             local State = false
+            if Library.ConfigLoaded and Flags[Flag] ~= nil then
+                State = Flags[Flag] == true
+            end
             Flags[Flag] = State
 
             local ToggleBtn = Instance.new("TextButton")
@@ -691,7 +810,6 @@ function Library:CreateWindow(Config)
             local SwitchBg = Instance.new("Frame")
             SwitchBg.Size = UDim2.new(0, 40, 0, 20)
             SwitchBg.Position = UDim2.new(1, -50, 0.5, -10)
-            SwitchBg.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
             SwitchBg.Parent = ToggleBtn
 
             local SwitchCorner = Instance.new("UICorner")
@@ -700,15 +818,13 @@ function Library:CreateWindow(Config)
 
             local Knob = Instance.new("Frame")
             Knob.Size = UDim2.new(0, 14, 0, 14)
-            Knob.Position = UDim2.new(0, 3, 0.5, -7)
-            Knob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
             Knob.Parent = SwitchBg
 
             local KnobCorner = Instance.new("UICorner")
             KnobCorner.CornerRadius = UDim.new(1, 0)
             KnobCorner.Parent = Knob
 
-            -- تحديث الشكل فقط
+            -- تحديث الشكل (animate = false للحالة الأولية)
             local function Visual(newState, animate)
                 local t = animate and 0.2 or 0
                 TweenService:Create(SwitchBg, TweenInfo.new(t), {
@@ -720,9 +836,10 @@ function Library:CreateWindow(Config)
                 }):Play()
             end
 
-            -- يستخدمه تحميل الإعدادات
+            Visual(State, false)
+
             Setters[Flag] = function(v)
-                State = v and true or false
+                State = v == true
                 Flags[Flag] = State
                 Visual(State, true)
                 if Callback then Callback(State) end
@@ -735,13 +852,31 @@ function Library:CreateWindow(Config)
                 Visual(State, true)
                 if Callback then Callback(State) end
             end)
+
+            return State
         end
 
-        -- 4. نظام Slider (شريط التمرير) - Flag اختياري للحفظ
+        -- 3b. Toggle يشغّل زر عائم (الزر يظهر/يختفي، ومكانه يُحفظ)
+        -- Callback يشتغل لما تضغط الزر العائم نفسه
+        function Elements:AddFloatingToggle(Text, Callback, Flag)
+            Flag = Flag or Text
+            local floatBtn = CreateFloatingButton(Flag, Text, Callback)
+
+            Elements:AddToggle(Text, nil, function(state)
+                floatBtn.Visible = state
+            end, Flag)
+
+            floatBtn.Visible = Flags[Flag] == true
+            return floatBtn
+        end
+
+        -- 4. Slider (شريط التمرير)
         function Elements:AddSlider(Text, Min, Max, Default, Callback, Flag)
             Flag = Flag or Text
             local Value = Default or Min
-            if Flags[Flag] ~= nil then Value = Flags[Flag] end
+            if Library.ConfigLoaded and Flags[Flag] ~= nil then
+                Value = Flags[Flag]
+            end
 
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 52)
@@ -800,9 +935,8 @@ function Library:CreateWindow(Config)
             FillCorner.CornerRadius = UDim.new(1, 0)
             FillCorner.Parent = BarFill
 
-            -- تحديث القيمة والشكل
             local function SetValue(v)
-                v = math.clamp(v, Min, Max)
+                v = math.clamp(tonumber(v) or Min, Min, Max)
                 Value = v
                 Flags[Flag] = v
                 BarFill.Size = UDim2.new((v - Min) / (Max - Min), 0, 1, 0)
