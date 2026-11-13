@@ -1,4 +1,4 @@
--- [[ MONOCHROME GLASS UI LIBRARY - v3 | ICONS + SOUND + SLIDER + LABEL + CONFIG + NOTIFY + FLOATING BUTTONS ]] --
+-- [[ MONOCHROME GLASS UI LIBRARY - v4 | AUTO SAVE + ICONS + SLIDER + LABEL + NOTIFY + FLOATING BUTTONS ]] --
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -7,14 +7,15 @@ local HttpService = game:GetService("HttpService")
 local Library = {}
 
 -- ================================
--- نظام الحفظ (Config) - يحفظ الإعدادات فقط وليس الكود
+-- نظام الحفظ التلقائي (Config)
 -- ================================
 local FolderName = "MonoGlassUI"
 local ConfigFolder = FolderName .. "/Configs"
+local AUTO_NAME = "autosave"   -- اسم ملف الحفظ التلقائي
 
-local Flags = {}          -- قيم الإعدادات (توجل، سلايدر، مكان الأزرار العائمة)
+local Flags = {}          -- كل الإعدادات (توجل، سلايدر، مكان الأزرار العائمة)
 local Setters = {}        -- دوال تحديث كل عنصر عند تحميل إعدادات
-Library.ConfigLoaded = false  -- يصير true بعد ما تحمّل إعدادات محفوظة
+Library.ConfigLoaded = false
 
 local function EnsureFolders()
     if not makefolder then return false end
@@ -27,12 +28,15 @@ local function EnsureFolders()
     return true
 end
 
--- حفظ الإعدادات داخل: MonoGlassUI/Configs/<name>.json
--- يتحقق من الكتابة بقراءة الملف مرة ثانية قبل ما يقول "تم"
-function Library:SaveConfig(name)
-    name = name or "default"
+-- حفظ الإعدادات يدوياً أو تلقائياً (silent = true يمنع الإشعارات)
+function Library:SaveConfig(name, silent)
+    name = name or AUTO_NAME
+    local function Say(opts)
+        if not silent then Library:Notify(opts) end
+    end
+
     if not writefile then
-        Library:Notify({ Title = "Config", Message = "الـ executor لا يدعم الحفظ", Duration = 4 })
+        Say({ Title = "Config", Message = "الـ executor لا يدعم الحفظ", Duration = 4 })
         return false, "no writefile"
     end
 
@@ -43,44 +47,45 @@ function Library:SaveConfig(name)
         return HttpService:JSONEncode(Flags)
     end)
     if not okEncode then
-        Library:Notify({ Title = "Config", Message = "فشل تجهيز البيانات", Duration = 4 })
+        Say({ Title = "Config", Message = "فشل تجهيز البيانات", Duration = 4 })
         return false, json
     end
 
     local okWrite, errWrite = pcall(writefile, path, json)
     if not okWrite then
-        Library:Notify({ Title = "Config", Message = "فشل الكتابة: " .. tostring(errWrite), Duration = 4 })
+        Say({ Title = "Config", Message = "فشل الكتابة: " .. tostring(errWrite), Duration = 4 })
         return false, errWrite
     end
 
-    -- تحقق فعلي: هل الملف موجود ومحتواه صح؟
-    local verified = false
-    if isfile and isfile(path) and readfile then
+    -- تحقق: نقرأ الملف ونقارن
+    local verified = true
+    if isfile and readfile and isfile(path) then
         local okRead, content = pcall(readfile, path)
         verified = okRead and content == json
-    else
-        verified = true -- executor ما يدعم التحقق، نعتبر الكتابة نجحت
     end
 
     if verified then
-        Library:Notify({ Title = "Config", Message = "تم حفظ الإعدادات: " .. name, Duration = 3 })
+        Say({ Title = "Config", Message = "تم حفظ الإعدادات", Duration = 2 })
     else
-        Library:Notify({ Title = "Config", Message = "الحفظ ما تأكد من الملف", Duration = 4 })
+        Say({ Title = "Config", Message = "الحفظ ما تأكد من الملف", Duration = 4 })
     end
     return verified, path
 end
 
--- تحميل الإعدادات وتطبيقها (تنفع قبل أو بعد إنشاء العناصر)
-function Library:LoadConfig(name)
-    name = name or "default"
+-- تحميل الإعدادات (silent = true يمنع الإشعارات)
+function Library:LoadConfig(name, silent)
+    name = name or AUTO_NAME
+    local function Say(opts)
+        if not silent then Library:Notify(opts) end
+    end
+
     if not (readfile and isfile) then
-        Library:Notify({ Title = "Config", Message = "الـ executor لا يدعم التحميل", Duration = 4 })
+        Say({ Title = "Config", Message = "الـ executor لا يدعم التحميل", Duration = 4 })
         return false, "no readfile"
     end
 
     local path = ConfigFolder .. "/" .. name .. ".json"
     if not isfile(path) then
-        Library:Notify({ Title = "Config", Message = "ما لقيت: " .. name, Duration = 3 })
         return false, "not found"
     end
 
@@ -93,7 +98,7 @@ function Library:LoadConfig(name)
         return HttpService:JSONDecode(content)
     end)
     if not okDecode or type(data) ~= "table" then
-        Library:Notify({ Title = "Config", Message = "ملف الإعدادات تالف", Duration = 4 })
+        Say({ Title = "Config", Message = "ملف الإعدادات تالف", Duration = 4 })
         return false, "bad json"
     end
 
@@ -102,15 +107,26 @@ function Library:LoadConfig(name)
     end
     Library.ConfigLoaded = true
 
-    -- تطبيق القيم على العناصر الموجودة حالياً
     for flag, value in pairs(data) do
         if Setters[flag] then
             pcall(Setters[flag], value)
         end
     end
 
-    Library:Notify({ Title = "Config", Message = "تم تحميل: " .. name, Duration = 3 })
+    Say({ Title = "Config", Message = "تم تحميل: " .. name, Duration = 2 })
     return true
+end
+
+-- جدولة الحفظ التلقائي: كل تغيير يحفظ بعد نص ثانية من آخر تغيير
+local saveToken = 0
+local function ScheduleSave()
+    saveToken = saveToken + 1
+    local myToken = saveToken
+    task.delay(0.5, function()
+        if myToken == saveToken then
+            Library:SaveConfig(AUTO_NAME, true)
+        end
+    end)
 end
 
 -- قائمة أسماء الإعدادات المحفوظة
@@ -124,6 +140,9 @@ function Library:ListConfigs()
     end
     return list
 end
+
+-- استرجاع الإعدادات تلقائياً عند تشغيل السكربت
+Library:LoadConfig(AUTO_NAME, true)
 
 -- ================================
 -- نظام الأيقونات
@@ -400,7 +419,6 @@ local function EnsureFloatGui()
     return FloatGui
 end
 
--- ينشئ زر عائم مخفي، مكانه يتحفظ مع الإعدادات
 local function CreateFloatingButton(Flag, Text, Callback)
     local gui = EnsureFloatGui()
     local posKey = "__pos_" .. Flag
@@ -427,9 +445,9 @@ local function CreateFloatingButton(Flag, Text, Callback)
     stroke.Color = Color3.fromRGB(255, 255, 255)
     stroke.Parent = btn
 
-    -- مكان البداية: المحفوظ إذا تحمّلت الإعدادات، غير كذا مكان افتراضي
+    -- مكان البداية: المحفوظ إن وجد، غير كذا مكان افتراضي
     local saved = Flags[posKey]
-    if Library.ConfigLoaded and type(saved) == "table" then
+    if type(saved) == "table" then
         btn.Position = UDim2.new(saved.xs, saved.xo, saved.ys, saved.yo)
     else
         btn.Position = UDim2.new(0.5, -45, 0.2 + (FloatCount * 0.1), 0)
@@ -451,6 +469,7 @@ local function CreateFloatingButton(Flag, Text, Callback)
                 xs = pos.X.Scale, xo = pos.X.Offset,
                 ys = pos.Y.Scale, yo = pos.Y.Offset,
             }
+            ScheduleSave()
         end,
     })
 
@@ -468,7 +487,7 @@ end
 -- ================================
 function Library:CreateWindow(Config)
     local TitleText = Config.Title or "PREMIUM HUB"
-    local SubTitleText = Config.SubTitle or "v3.0"
+    local SubTitleText = Config.SubTitle or "v4.0"
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "MonoGlassUI"
@@ -773,8 +792,7 @@ function Library:CreateWindow(Config)
             end)
         end
 
-        -- 3. Toggle (زر تفعيل)
-        -- يبدأ OFF دائماً، إلا إذا تحمّلت إعدادات محفوظة (LoadConfig)
+        -- 3. Toggle (زر تفعيل) - يحفظ آخر حالة تلقائياً
         function Elements:AddToggle(Text, _DefaultState, Callback, Flag)
             Flag = Flag or Text
 
@@ -824,7 +842,6 @@ function Library:CreateWindow(Config)
             KnobCorner.CornerRadius = UDim.new(1, 0)
             KnobCorner.Parent = Knob
 
-            -- تحديث الشكل (animate = false للحالة الأولية)
             local function Visual(newState, animate)
                 local t = animate and 0.2 or 0
                 TweenService:Create(SwitchBg, TweenInfo.new(t), {
@@ -838,6 +855,7 @@ function Library:CreateWindow(Config)
 
             Visual(State, false)
 
+            -- يستخدمه تحميل الإعدادات (بدون حفظ جديد)
             Setters[Flag] = function(v)
                 State = v == true
                 Flags[Flag] = State
@@ -850,14 +868,14 @@ function Library:CreateWindow(Config)
                 State = not State
                 Flags[Flag] = State
                 Visual(State, true)
+                ScheduleSave()
                 if Callback then Callback(State) end
             end)
 
             return State
         end
 
-        -- 3b. Toggle يشغّل زر عائم (الزر يظهر/يختفي، ومكانه يُحفظ)
-        -- Callback يشتغل لما تضغط الزر العائم نفسه
+        -- 3b. Toggle يشغّل زر عائم (يظهر/يختفي، ومكانه يُحفظ تلقائياً)
         function Elements:AddFloatingToggle(Text, Callback, Flag)
             Flag = Flag or Text
             local floatBtn = CreateFloatingButton(Flag, Text, Callback)
@@ -870,7 +888,7 @@ function Library:CreateWindow(Config)
             return floatBtn
         end
 
-        -- 4. Slider (شريط التمرير)
+        -- 4. Slider (شريط التمرير) - يحفظ القيمة تلقائياً
         function Elements:AddSlider(Text, Min, Max, Default, Callback, Flag)
             Flag = Flag or Text
             local Value = Default or Min
@@ -945,6 +963,7 @@ function Library:CreateWindow(Config)
 
             SetValue(Value)
 
+            -- يستخدمه تحميل الإعدادات (بدون حفظ جديد)
             Setters[Flag] = function(v)
                 SetValue(v)
                 if Callback then Callback(Value) end
@@ -953,6 +972,7 @@ function Library:CreateWindow(Config)
             local function UpdateSlider(input)
                 local rel = math.clamp((input.Position.X - BarBackground.AbsolutePosition.X) / BarBackground.AbsoluteSize.X, 0, 1)
                 SetValue(math.floor(Min + ((Max - Min) * rel)))
+                ScheduleSave()
                 if Callback then Callback(Value) end
             end
 
