@@ -2,34 +2,48 @@
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
-local ContentProvider = game:GetService("ContentProvider")
-local HttpService = game:GetService("HttpService")
 
 local Library = {}
 
--- تحميل نظام الأيقونات من رابط الـ GitHub الخاص بك
-local IconsTable = {}
-pcall(function()
-    local success, response = pcall(function()
-        return game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua")
-    end)
-    if success and response then
-        local func, err = loadstring(response)
-        if func then
-            local res = func()
-            if type(res) == "table" then
-                IconsTable = res
+-- ================================
+-- نظام الأيقونات
+-- ================================
+local IconModule = nil
+local okLoad, loadedModule = pcall(function()
+    local src = game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua")
+    local loader = loadstring or load
+    return loader(src)()
+end)
+
+if okLoad and type(loadedModule) == "table" and loadedModule.Icon then
+    IconModule = loadedModule
+else
+    warn("[MonoGlassUI] فشل تحميل الأيقونات:", loadedModule)
+end
+
+local FallbackIcon = { Image = "rbxassetid://6031094667" }
+
+-- يرجع بيانات الأيقونة (صورة + إحداثيات الـ Sprite إن وجدت)
+local function GetIcon(iconName)
+    if IconModule and iconName then
+        local ok, data = pcall(function()
+            return IconModule.Icon(iconName, "lucide")
+        end)
+
+        if ok and data then
+            if type(data) == "string" then
+                return { Image = data }
+            elseif type(data) == "table" and data[1] then
+                local info = data[2] or {}
+                return {
+                    Image = data[1],
+                    RectSize = info.ImageRectSize,
+                    RectOffset = info.ImageRectPosition,
+                }
             end
         end
     end
-end)
-
--- دالة جلب الأيقونة أو استخدام بديل افتراضي
-local function GetIcon(iconName)
-    if IconsTable and IconsTable[iconName] then
-        return IconsTable[iconName]
-    end
-    return "rbxassetid://6031094667" -- أيقونة افتراضية في حال لم تتوفر
+    return FallbackIcon
 end
 
 -- صوت الضغط المطلوب (Sound ID)
@@ -309,11 +323,16 @@ function Library:CreateWindow(Config)
         TabCorner.Parent = TabBtn
 
         -- إضافة أيقونة التبويب
+        local iconData = GetIcon(IconName or "home")
         local TabIcon = Instance.new("ImageLabel")
         TabIcon.Size = UDim2.new(0, 18, 0, 18)
         TabIcon.Position = UDim2.new(0, 10, 0.5, -9)
         TabIcon.BackgroundTransparency = 1
-        TabIcon.Image = GetIcon(IconName or "home")
+        TabIcon.Image = iconData.Image
+        if iconData.RectSize then
+            TabIcon.ImageRectSize = iconData.RectSize
+            TabIcon.ImageRectOffset = iconData.RectOffset or Vector2.new(0, 0)
+        end
         TabIcon.ImageColor3 = FirstTab and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 165)
         TabIcon.Parent = TabBtn
 
