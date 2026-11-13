@@ -1,9 +1,79 @@
--- [[ MONOCHROME GLASS UI LIBRARY - PRO EDITION + ICONS + SOUND + SLIDER + LABEL ]] --
+-- [[ MONOCHROME GLASS UI LIBRARY - PRO EDITION + ICONS + SOUND + SLIDER + LABEL + CONFIG ]] --
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 
 local Library = {}
+
+-- ================================
+-- نظام الحفظ (Config)
+-- ================================
+local FolderName = "MonoGlassUI"
+local ConfigFolder = FolderName .. "/Configs"
+
+local Flags = {}    -- القيم الحالية لكل عنصر
+local Setters = {}  -- دوال تحديث كل عنصر عند تحميل إعدادات
+
+local function EnsureFolders()
+    if not makefolder then return end
+    if not (isfolder and isfolder(FolderName)) then
+        pcall(makefolder, FolderName)
+    end
+    if not (isfolder and isfolder(ConfigFolder)) then
+        pcall(makefolder, ConfigFolder)
+    end
+end
+
+-- حفظ الإعدادات في ملف داخل المجلد: MonoGlassUI/Configs/<name>.json
+function Library:SaveConfig(name)
+    if not writefile then
+        warn("[MonoGlassUI] الـ executor لا يدعم writefile")
+        return false, "no writefile"
+    end
+    EnsureFolders()
+    local ok, err = pcall(function()
+        writefile(ConfigFolder .. "/" .. name .. ".json", HttpService:JSONEncode(Flags))
+    end)
+    return ok, err
+end
+
+-- تحميل الإعدادات وتطبيقها على العناصر
+function Library:LoadConfig(name)
+    if not (readfile and isfile) then
+        warn("[MonoGlassUI] الـ executor لا يدعم readfile")
+        return false, "no readfile"
+    end
+    local path = ConfigFolder .. "/" .. name .. ".json"
+    if not isfile(path) then
+        return false, "not found"
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(path))
+    end)
+    if not ok then
+        return false, data
+    end
+    for flag, value in pairs(data) do
+        Flags[flag] = value
+        if Setters[flag] then
+            pcall(Setters[flag], value)
+        end
+    end
+    return true
+end
+
+-- قائمة أسماء الإعدادات المحفوظة
+function Library:ListConfigs()
+    local list = {}
+    if listfiles and isfolder and isfolder(ConfigFolder) then
+        for _, path in ipairs(listfiles(ConfigFolder)) do
+            local n = path:match("([^/\\]+)%.json$")
+            if n then table.insert(list, n) end
+        end
+    end
+    return list
+end
 
 -- ================================
 -- نظام الأيقونات
@@ -21,9 +91,7 @@ else
     warn("[MonoGlassUI] فشل تحميل الأيقونات:", loadedModule)
 end
 
-local FallbackIcon = { Image = "rbxassetid://6031094667" }
-
--- يرجع بيانات الأيقونة (صورة + إحداثيات الـ Sprite إن وجدت)
+-- يرجع بيانات الأيقونة، أو nil إذا ما لقاها (بدون أيقونة احتياطية)
 local function GetIcon(iconName)
     if IconModule and iconName then
         local ok, data = pcall(function()
@@ -43,7 +111,7 @@ local function GetIcon(iconName)
             end
         end
     end
-    return FallbackIcon
+    return nil
 end
 
 -- صوت الضغط المطلوب (Sound ID)
@@ -306,11 +374,13 @@ function Library:CreateWindow(Config)
     local FirstTab = true
 
     function WindowFunctions:CreateTab(TabName, IconName)
+        local iconData = GetIcon(IconName)
+
         local TabBtn = Instance.new("TextButton")
         TabBtn.Size = UDim2.new(1, 0, 0, 36)
         TabBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         TabBtn.BackgroundTransparency = FirstTab and 0.82 or 0.96
-        TabBtn.Text = "        " .. TabName
+        TabBtn.Text = (iconData and "        " or "  ") .. TabName
         TabBtn.Font = Enum.Font.GothamSemibold
         TabBtn.TextSize = 13
         TabBtn.TextColor3 = FirstTab and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 165)
@@ -322,19 +392,21 @@ function Library:CreateWindow(Config)
         TabCorner.CornerRadius = UDim.new(0, 8)
         TabCorner.Parent = TabBtn
 
-        -- إضافة أيقونة التبويب
-        local iconData = GetIcon(IconName or "home")
-        local TabIcon = Instance.new("ImageLabel")
-        TabIcon.Size = UDim2.new(0, 18, 0, 18)
-        TabIcon.Position = UDim2.new(0, 10, 0.5, -9)
-        TabIcon.BackgroundTransparency = 1
-        TabIcon.Image = iconData.Image
-        if iconData.RectSize then
-            TabIcon.ImageRectSize = iconData.RectSize
-            TabIcon.ImageRectOffset = iconData.RectOffset or Vector2.new(0, 0)
+        -- أيقونة التبويب (تظهر فقط إذا الأيقونة موجودة)
+        local TabIcon = nil
+        if iconData then
+            TabIcon = Instance.new("ImageLabel")
+            TabIcon.Size = UDim2.new(0, 18, 0, 18)
+            TabIcon.Position = UDim2.new(0, 10, 0.5, -9)
+            TabIcon.BackgroundTransparency = 1
+            TabIcon.Image = iconData.Image
+            if iconData.RectSize then
+                TabIcon.ImageRectSize = iconData.RectSize
+                TabIcon.ImageRectOffset = iconData.RectOffset or Vector2.new(0, 0)
+            end
+            TabIcon.ImageColor3 = FirstTab and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 165)
+            TabIcon.Parent = TabBtn
         end
-        TabIcon.ImageColor3 = FirstTab and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 165)
-        TabIcon.Parent = TabBtn
 
         local Page = Instance.new("ScrollingFrame")
         Page.Size = UDim2.new(1, 0, 1, 0)
@@ -373,7 +445,9 @@ function Library:CreateWindow(Config)
             end
             Page.Visible = true
             TweenService:Create(TabBtn, TweenInfo.new(0.2), {BackgroundTransparency = 0.82, TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-            TweenService:Create(TabIcon, TweenInfo.new(0.2), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+            if TabIcon then
+                TweenService:Create(TabIcon, TweenInfo.new(0.2), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+            end
         end)
 
         local Elements = {}
@@ -425,9 +499,13 @@ function Library:CreateWindow(Config)
             end)
         end
 
-        -- 3. نظام Toggle (زر تفعيل)
-        function Elements:AddToggle(Text, DefaultState, Callback)
+        -- 3. نظام Toggle (زر تفعيل) - Flag اختياري للحفظ
+        function Elements:AddToggle(Text, DefaultState, Callback, Flag)
+            Flag = Flag or Text
             local State = DefaultState or false
+            if Flags[Flag] ~= nil then State = Flags[Flag] end
+            Flags[Flag] = State
+
             local ToggleBtn = Instance.new("TextButton")
             ToggleBtn.Size = UDim2.new(1, 0, 0, 38)
             ToggleBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -471,23 +549,46 @@ function Library:CreateWindow(Config)
             KnobCorner.CornerRadius = UDim.new(1, 0)
             KnobCorner.Parent = Knob
 
+            -- تحديث الشكل فقط (بدون تشغيل Callback)
+            local function Visual(newState, animate)
+                local info = TweenInfo.new(animate and 0.2 or 0)
+                TweenService:Create(SwitchBg, info, {
+                    BackgroundColor3 = newState and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(35, 35, 40)
+                }):Play()
+                TweenService:Create(Knob, TweenInfo.new(animate and 0.2 or 0, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Position = newState and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+                    BackgroundColor3 = newState and Color3.fromRGB(10, 10, 12) or Color3.fromRGB(200, 200, 200)
+                }):Play()
+            end
+
+            Setters[Flag] = function(v)
+                State = v and true or false
+                Flags[Flag] = State
+                Visual(State, true)
+                if Callback then Callback(State) end
+            end
+
             ToggleBtn.MouseButton1Click:Connect(function()
                 CreateRipple(ToggleBtn)
                 State = not State
-                TweenService:Create(SwitchBg, TweenInfo.new(0.2), {
-                    BackgroundColor3 = State and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(35, 35, 40)
-                }):Play()
-                TweenService:Create(Knob, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Position = State and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
-                    BackgroundColor3 = State and Color3.fromRGB(10, 10, 12) or Color3.fromRGB(200, 200, 200)
-                }):Play()
+                Flags[Flag] = State
+                Visual(State, true)
                 if Callback then Callback(State) end
             end)
+
+            -- تطبيق القيمة المحفوظة مسبقاً (إن وجدت) بدون Callback
+            if State ~= (DefaultState or false) then
+                Visual(State, false)
+            end
+            if Callback and State then Callback(State) end
         end
 
-        -- 4. نظام Slider (شريط التمرير)
-        function Elements:AddSlider(Text, Min, Max, Default, Callback)
+        -- 4. نظام Slider (شريط التمرير) - Flag اختياري للحفظ
+        function Elements:AddSlider(Text, Min, Max, Default, Callback, Flag)
+            Flag = Flag or Text
             local Value = Default or Min
+            if Flags[Flag] ~= nil then Value = Flags[Flag] end
+
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 52)
             SliderFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -519,7 +620,6 @@ function Library:CreateWindow(Config)
             ValueLabel.Size = UDim2.new(0, 60, 0, 22)
             ValueLabel.Position = UDim2.new(1, -70, 0, 4)
             ValueLabel.BackgroundTransparency = 1
-            ValueLabel.Text = tostring(Value)
             ValueLabel.Font = Enum.Font.GothamBold
             ValueLabel.TextSize = 13
             ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -538,7 +638,6 @@ function Library:CreateWindow(Config)
             BarCorner.Parent = BarBackground
 
             local BarFill = Instance.new("Frame")
-            BarFill.Size = UDim2.new((Value - Min) / (Max - Min), 0, 1, 0)
             BarFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             BarFill.BorderSizePixel = 0
             BarFill.Parent = BarBackground
@@ -547,12 +646,25 @@ function Library:CreateWindow(Config)
             FillCorner.CornerRadius = UDim.new(1, 0)
             FillCorner.Parent = BarFill
 
+            -- تحديث القيمة والشكل
+            local function SetValue(v)
+                v = math.clamp(v, Min, Max)
+                Value = v
+                Flags[Flag] = v
+                BarFill.Size = UDim2.new((v - Min) / (Max - Min), 0, 1, 0)
+                ValueLabel.Text = tostring(v)
+            end
+
+            SetValue(Value)
+
+            Setters[Flag] = function(v)
+                SetValue(v)
+                if Callback then Callback(Value) end
+            end
+
             local function UpdateSlider(input)
-                local pos = UDim2.new(math.clamp((input.Position.X - BarBackground.AbsolutePosition.X) / BarBackground.AbsoluteSize.X, 0, 1), 0, 1, 0)
-                BarFill.Size = pos
-                local newVal = math.floor(Min + ((Max - Min) * pos.X.Scale))
-                Value = newVal
-                ValueLabel.Text = tostring(Value)
+                local rel = math.clamp((input.Position.X - BarBackground.AbsolutePosition.X) / BarBackground.AbsoluteSize.X, 0, 1)
+                SetValue(math.floor(Min + ((Max - Min) * rel)))
                 if Callback then Callback(Value) end
             end
 
