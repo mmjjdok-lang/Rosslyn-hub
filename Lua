@@ -1,4 +1,4 @@
--- [[ MONOCHROME GLASS UI LIBRARY - PRO EDITION + ICONS + SOUND + SLIDER + LABEL + CONFIG ]] --
+-- [[ MONOCHROME GLASS UI LIBRARY - v2 | ICONS + SOUND + SLIDER + LABEL + CONFIG + NOTIFY ]] --
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -7,12 +7,12 @@ local HttpService = game:GetService("HttpService")
 local Library = {}
 
 -- ================================
--- نظام الحفظ (Config)
+-- نظام الحفظ (Config) - يحفظ الإعدادات فقط وليس الكود
 -- ================================
 local FolderName = "MonoGlassUI"
 local ConfigFolder = FolderName .. "/Configs"
 
-local Flags = {}    -- القيم الحالية لكل عنصر
+local Flags = {}    -- قيم الإعدادات الحالية (تتحدث مع كل تغيير)
 local Setters = {}  -- دوال تحديث كل عنصر عند تحميل إعدادات
 
 local function EnsureFolders()
@@ -25,8 +25,9 @@ local function EnsureFolders()
     end
 end
 
--- حفظ الإعدادات في ملف داخل المجلد: MonoGlassUI/Configs/<name>.json
+-- حفظ الإعدادات: MonoGlassUI/Configs/<name>.json
 function Library:SaveConfig(name)
+    name = name or "default"
     if not writefile then
         warn("[MonoGlassUI] الـ executor لا يدعم writefile")
         return false, "no writefile"
@@ -35,17 +36,24 @@ function Library:SaveConfig(name)
     local ok, err = pcall(function()
         writefile(ConfigFolder .. "/" .. name .. ".json", HttpService:JSONEncode(Flags))
     end)
+    if ok then
+        Library:Notify({ Title = "Config", Message = "تم حفظ الإعدادات: " .. name, Duration = 3 })
+    else
+        Library:Notify({ Title = "Config", Message = "فشل الحفظ", Duration = 3 })
+    end
     return ok, err
 end
 
 -- تحميل الإعدادات وتطبيقها على العناصر
 function Library:LoadConfig(name)
+    name = name or "default"
     if not (readfile and isfile) then
         warn("[MonoGlassUI] الـ executor لا يدعم readfile")
         return false, "no readfile"
     end
     local path = ConfigFolder .. "/" .. name .. ".json"
     if not isfile(path) then
+        Library:Notify({ Title = "Config", Message = "ما لقيت الإعدادات: " .. name, Duration = 3 })
         return false, "not found"
     end
     local ok, data = pcall(function()
@@ -60,6 +68,7 @@ function Library:LoadConfig(name)
             pcall(Setters[flag], value)
         end
     end
+    Library:Notify({ Title = "Config", Message = "تم تحميل الإعدادات: " .. name, Duration = 3 })
     return true
 end
 
@@ -131,6 +140,179 @@ local ParentGui = (gethui and gethui()) or CoreGui
 if ParentGui:FindFirstChild("MonoGlassUI") then
     ParentGui:FindFirstChild("MonoGlassUI"):Destroy()
 end
+if ParentGui:FindFirstChild("MonoGlassNotify") then
+    ParentGui:FindFirstChild("MonoGlassNotify"):Destroy()
+end
+
+-- ================================
+-- نظام الإشعارات (Notify)
+-- ================================
+local NotifyHolder = nil
+
+local function EnsureNotifyHolder()
+    if NotifyHolder and NotifyHolder.Parent then
+        return NotifyHolder
+    end
+
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "MonoGlassNotify"
+    sg.ResetOnSpawn = false
+    sg.DisplayOrder = 999
+    sg.Parent = ParentGui
+
+    NotifyHolder = Instance.new("Frame")
+    NotifyHolder.BackgroundTransparency = 1
+    NotifyHolder.AnchorPoint = Vector2.new(0.5, 0)
+    NotifyHolder.Position = UDim2.new(0.5, 0, 0, 10)
+    NotifyHolder.Size = UDim2.new(0, 320, 0, 0)
+    NotifyHolder.AutomaticSize = Enum.AutomaticSize.Y
+    NotifyHolder.Parent = sg
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 8)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = NotifyHolder
+
+    return NotifyHolder
+end
+
+-- Library:Notify({ Title = "...", Message = "...", Duration = 4 })
+function Library:Notify(opts)
+    if type(opts) == "string" then
+        opts = { Message = opts }
+    end
+    opts = opts or {}
+
+    local Title = opts.Title or "Notification"
+    local Message = opts.Message or ""
+    local Duration = opts.Duration or 4
+    local holder = EnsureNotifyHolder()
+
+    -- الحاوية: تقص الشعار أثناء النزول والطلوع
+    local wrapper = Instance.new("Frame")
+    wrapper.Size = UDim2.new(1, 0, 0, 72)
+    wrapper.BackgroundTransparency = 1
+    wrapper.ClipsDescendants = true
+    wrapper.Parent = holder
+
+    -- البطاقة: تنزل من الشريط العلوي
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 70)
+    card.Position = UDim2.new(0, 0, 0, -80)
+    card.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+    card.BackgroundTransparency = 0.15
+    card.Parent = wrapper
+
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 12)
+    cardCorner.Parent = card
+
+    local cardStroke = Instance.new("UIStroke")
+    cardStroke.Thickness = 1.2
+    cardStroke.Color = Color3.fromRGB(255, 255, 255)
+    cardStroke.Transparency = 0.7
+    cardStroke.Parent = card
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -28, 0, 20)
+    titleLabel.Position = UDim2.new(0, 14, 0, 8)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = Title
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 14
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    titleLabel.Parent = card
+
+    local msgLabel = Instance.new("TextLabel")
+    msgLabel.Size = UDim2.new(1, -28, 0, 18)
+    msgLabel.Position = UDim2.new(0, 14, 0, 30)
+    msgLabel.BackgroundTransparency = 1
+    msgLabel.Text = Message
+    msgLabel.Font = Enum.Font.GothamMedium
+    msgLabel.TextSize = 12
+    msgLabel.TextColor3 = Color3.fromRGB(170, 170, 175)
+    msgLabel.TextXAlignment = Enum.TextXAlignment.Left
+    msgLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    msgLabel.Parent = card
+
+    -- شريط الوقت: يتناقص حتى يختفي الشعار
+    local progressBg = Instance.new("Frame")
+    progressBg.Size = UDim2.new(1, -28, 0, 3)
+    progressBg.Position = UDim2.new(0, 14, 1, -10)
+    progressBg.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+    progressBg.BorderSizePixel = 0
+    progressBg.Parent = card
+
+    local progressCorner = Instance.new("UICorner")
+    progressCorner.CornerRadius = UDim.new(1, 0)
+    progressCorner.Parent = progressBg
+
+    local progressFill = Instance.new("Frame")
+    progressFill.Size = UDim2.new(1, 0, 1, 0)
+    progressFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    progressFill.BorderSizePixel = 0
+    progressFill.Parent = progressBg
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = progressFill
+
+    -- نزول من الأعلى
+    TweenService:Create(card, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0, 0, 0, 0)
+    }):Play()
+
+    -- الوقت
+    TweenService:Create(progressFill, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {
+        Size = UDim2.new(0, 0, 1, 0)
+    }):Play()
+
+    -- بعد انتهاء الوقت: يطلع للأعلى ويختفي
+    task.delay(Duration, function()
+        local out = TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+            Position = UDim2.new(0, 0, 0, -80),
+            BackgroundTransparency = 1
+        })
+        out:Play()
+        out.Completed:Connect(function()
+            wrapper:Destroy()
+        end)
+    end)
+end
+
+-- ================================
+-- عناصر مساعدة للواجهة
+-- ================================
+-- تأثير التموج المائي عند الضغط (Ripple Effect)
+local function CreateRipple(button)
+    PlayClickSound()
+    local ripple = Instance.new("Frame")
+    ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    ripple.BackgroundTransparency = 0.75
+    ripple.BorderSizePixel = 0
+    ripple.AnchorPoint = Vector2.new(0.5, 0.5)
+    ripple.Position = UDim2.new(0.5, 0, 0.5, 0)
+    ripple.Size = UDim2.new(0, 0, 0, 0)
+    ripple.ZIndex = button.ZIndex + 1
+    ripple.Parent = button
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = ripple
+
+    local maxSize = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 1.5
+    local tween = TweenService:Create(ripple, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, maxSize, 0, maxSize),
+        BackgroundTransparency = 1
+    })
+    tween:Play()
+    tween.Completed:Connect(function()
+        ripple:Destroy()
+    end)
+end
 
 -- نظام السحب الاحترافي
 local function MakeDraggable(dragHandle, mainFrame)
@@ -159,34 +341,6 @@ local function MakeDraggable(dragHandle, mainFrame)
                 Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             }):Play()
         end
-    end)
-end
-
--- تأثير التموج المائي عند الضغط (Ripple Effect)
-local function CreateRipple(button)
-    PlayClickSound()
-    local ripple = Instance.new("Frame")
-    ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    ripple.BackgroundTransparency = 0.75
-    ripple.BorderSizePixel = 0
-    ripple.AnchorPoint = Vector2.new(0.5, 0.5)
-    ripple.Position = UDim2.new(0.5, 0, 0.5, 0)
-    ripple.Size = UDim2.new(0, 0, 0, 0)
-    ripple.ZIndex = button.ZIndex + 1
-    ripple.Parent = button
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = ripple
-
-    local maxSize = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 1.5
-    local tween = TweenService:Create(ripple, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, maxSize, 0, maxSize),
-        BackgroundTransparency = 1
-    })
-    tween:Play()
-    tween.Completed:Connect(function()
-        ripple:Destroy()
     end)
 end
 
@@ -373,6 +527,11 @@ function Library:CreateWindow(Config)
     local WindowFunctions = {}
     local FirstTab = true
 
+    -- اختصار: Window:Notify(...)
+    function WindowFunctions:Notify(opts)
+        Library:Notify(opts)
+    end
+
     function WindowFunctions:CreateTab(TabName, IconName)
         local iconData = GetIcon(IconName)
 
@@ -499,11 +658,11 @@ function Library:CreateWindow(Config)
             end)
         end
 
-        -- 3. نظام Toggle (زر تفعيل) - Flag اختياري للحفظ
-        function Elements:AddToggle(Text, DefaultState, Callback, Flag)
+        -- 3. نظام Toggle (زر تفعيل)
+        -- دائماً يبدأ OFF عند تشغيل السكربت. تقدر تفعله يدوياً أو تحمّل إعدادات محفوظة.
+        function Elements:AddToggle(Text, _DefaultState, Callback, Flag)
             Flag = Flag or Text
-            local State = DefaultState or false
-            if Flags[Flag] ~= nil then State = Flags[Flag] end
+            local State = false
             Flags[Flag] = State
 
             local ToggleBtn = Instance.new("TextButton")
@@ -532,7 +691,7 @@ function Library:CreateWindow(Config)
             local SwitchBg = Instance.new("Frame")
             SwitchBg.Size = UDim2.new(0, 40, 0, 20)
             SwitchBg.Position = UDim2.new(1, -50, 0.5, -10)
-            SwitchBg.BackgroundColor3 = State and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(35, 35, 40)
+            SwitchBg.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
             SwitchBg.Parent = ToggleBtn
 
             local SwitchCorner = Instance.new("UICorner")
@@ -541,26 +700,27 @@ function Library:CreateWindow(Config)
 
             local Knob = Instance.new("Frame")
             Knob.Size = UDim2.new(0, 14, 0, 14)
-            Knob.Position = State and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-            Knob.BackgroundColor3 = State and Color3.fromRGB(10, 10, 12) or Color3.fromRGB(200, 200, 200)
+            Knob.Position = UDim2.new(0, 3, 0.5, -7)
+            Knob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
             Knob.Parent = SwitchBg
 
             local KnobCorner = Instance.new("UICorner")
             KnobCorner.CornerRadius = UDim.new(1, 0)
             KnobCorner.Parent = Knob
 
-            -- تحديث الشكل فقط (بدون تشغيل Callback)
+            -- تحديث الشكل فقط
             local function Visual(newState, animate)
-                local info = TweenInfo.new(animate and 0.2 or 0)
-                TweenService:Create(SwitchBg, info, {
+                local t = animate and 0.2 or 0
+                TweenService:Create(SwitchBg, TweenInfo.new(t), {
                     BackgroundColor3 = newState and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(35, 35, 40)
                 }):Play()
-                TweenService:Create(Knob, TweenInfo.new(animate and 0.2 or 0, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                TweenService:Create(Knob, TweenInfo.new(t, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
                     Position = newState and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
                     BackgroundColor3 = newState and Color3.fromRGB(10, 10, 12) or Color3.fromRGB(200, 200, 200)
                 }):Play()
             end
 
+            -- يستخدمه تحميل الإعدادات
             Setters[Flag] = function(v)
                 State = v and true or false
                 Flags[Flag] = State
@@ -575,12 +735,6 @@ function Library:CreateWindow(Config)
                 Visual(State, true)
                 if Callback then Callback(State) end
             end)
-
-            -- تطبيق القيمة المحفوظة مسبقاً (إن وجدت) بدون Callback
-            if State ~= (DefaultState or false) then
-                Visual(State, false)
-            end
-            if Callback and State then Callback(State) end
         end
 
         -- 4. نظام Slider (شريط التمرير) - Flag اختياري للحفظ
