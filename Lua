@@ -563,3 +563,5 @@ function Library:CreateWindow(Config)
 
     return WindowFunctions
 end
+
+return Library
