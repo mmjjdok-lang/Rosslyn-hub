@@ -1,4 +1,4 @@
--- [[ DESKTOP WINDOW GLASS UI LIBRARY ]] --
+-- [[ ROSSLYN HUB - DESKTOP GLASS UI LIBRARY (CORE) ]] --
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -7,7 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local Library = {}
 
--- تحميل الأيقونات من رابط الـ GitHub الخاص بك
+-- تحميل الأيقونات من الـ GitHub
 local IconsTable = {}
 pcall(function()
     local success, response = pcall(function()
@@ -26,7 +26,7 @@ local function GetIcon(name)
     return IconsTable[name] or "rbxassetid://6031094667"
 end
 
--- صوت الضغط (Sound ID)
+-- صوت الضغط المطلوب
 local ClickSound = Instance.new("Sound")
 ClickSound.SoundId = "rbxassetid://3868133279"
 ClickSound.Volume = 0.8
@@ -42,7 +42,7 @@ if ParentGui:FindFirstChild("DesktopWindowUI") then
     ParentGui:FindFirstChild("DesktopWindowUI"):Destroy()
 end
 
--- دالة السحب المكتبية من شريط العنوان العلوي
+-- دالة السحب المكتبية
 local function MakeWindowDraggable(topbar, window)
     local dragging, dragInput, dragStart, startPos
     topbar.InputBegan:Connect(function(input)
@@ -106,14 +106,13 @@ function Library:CreateWindow(Config)
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = ParentGui
 
-    -- زر Open العائم لإخفاء وإظهار نافذة الديسك توب
     local OpenBtn = Instance.new("TextButton")
     OpenBtn.Name = "OpenButton"
     OpenBtn.Size = UDim2.new(0, 48, 0, 48)
     OpenBtn.Position = UDim2.new(0.04, 0, 0.15, 0)
     OpenBtn.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
     OpenBtn.BackgroundTransparency = 0.2
-    OpenBtn.Text = "WIN"
+    OpenBtn.Text = "UI"
     OpenBtn.Font = Enum.Font.GothamBlack
     OpenBtn.TextSize = 14
     OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -129,13 +128,12 @@ function Library:CreateWindow(Config)
     OpenStroke.Thickness = 1.5
     OpenStroke.Parent = OpenBtn
 
-    -- إطار نافذة الديسك توب الرئيسي (Desktop Window Frame)
     local Window = Instance.new("Frame")
     Window.Name = "MainWindow"
     Window.Size = UDim2.new(0, 540, 0, 360)
     Window.Position = UDim2.new(0.5, -270, 0.5, -180)
     Window.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
-    Window.BackgroundTransparency = 0.18 -- شفافية ديسك توب زجاجية فائقة
+    Window.BackgroundTransparency = 0.18
     Window.ClipsDescendants = true
     Window.Parent = ScreenGui
 
@@ -143,7 +141,6 @@ function Library:CreateWindow(Config)
     WinCorner.CornerRadius = UDim.new(0, 10)
     WinCorner.Parent = Window
 
-    -- تدرج خلفية نافذة الديسك توب (أسود وأبيض ناعم)
     local WinGrad = Instance.new("UIGradient")
     WinGrad.Rotation = 60
     WinGrad.Color = ColorSequence.new({
@@ -153,7 +150,6 @@ function Library:CreateWindow(Config)
     })
     WinGrad.Parent = Window
 
-    -- حواف النافذة مع تدرج متحرك سريع
     local WinStroke = Instance.new("UIStroke")
     WinStroke.Thickness = 1.6
     WinStroke.Color = Color3.fromRGB(255, 255, 255)
@@ -176,7 +172,6 @@ function Library:CreateWindow(Config)
         end
     end)
 
-    -- شريط العنوان المكتبي (Desktop Titlebar)
     local Titlebar = Instance.new("Frame")
     Titlebar.Name = "Titlebar"
     Titlebar.Size = UDim2.new(1, 0, 0, 36)
@@ -198,7 +193,6 @@ function Library:CreateWindow(Config)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = Titlebar
 
-    -- أزرار التحكم بالنوافذ المكتبية (Minimize & Close)
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0, 32, 0, 22)
     CloseBtn.Position = UDim2.new(1, -38, 0.5, -11)
@@ -220,9 +214,7 @@ function Library:CreateWindow(Config)
         ScreenGui:Destroy()
     end)
 
-    -- زر إخفاء / إظهار النافذة عبر Open Button وعبر زر التصغير
     local IsOpen = true
-    local DefaultSize = Window.Size
     OpenBtn.MouseButton1Click:Connect(function()
         CreateRipple(OpenBtn)
         IsOpen = not IsOpen
@@ -251,7 +243,6 @@ function Library:CreateWindow(Config)
         Window.Visible = IsOpen
     end)
 
-    -- خط فاصل تحت شريط العنوان
     local WinDivider = Instance.new("Frame")
     WinDivider.Size = UDim2.new(1, 0, 0, 1)
     WinDivider.Position = UDim2.new(0, 0, 0, 36)
@@ -260,7 +251,6 @@ function Library:CreateWindow(Config)
     WinDivider.BorderSizePixel = 0
     WinDivider.Parent = Window
 
-    -- شريط التبويبات الجانبي (Desktop Sidebar)
     local Sidebar = Instance.new("ScrollingFrame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 145, 1, -46)
@@ -276,7 +266,6 @@ function Library:CreateWindow(Config)
     SideLayout.SortOrder = Enum.SortOrder.LayoutOrder
     SideLayout.Parent = Sidebar
 
-    -- حاوية الصفحات (Content Pages Container)
     local Container = Instance.new("Frame")
     Container.Name = "Container"
     Container.Size = UDim2.new(1, -162, 1, -46)
@@ -352,7 +341,6 @@ function Library:CreateWindow(Config)
 
         local Elements = {}
 
-        -- عنصر Label مكتبي
         function Elements:AddLabel(Text)
             local Lbl = Instance.new("TextLabel")
             Lbl.Size = UDim2.new(1, 0, 0, 24)
@@ -365,7 +353,6 @@ function Library:CreateWindow(Config)
             Lbl.Parent = Page
         end
 
-        -- عنصر Button مكتبي
         function Elements:AddButton(Text, Callback)
             local Btn = Instance.new("TextButton")
             Btn.Size = UDim2.new(1, 0, 0, 34)
@@ -398,7 +385,6 @@ function Library:CreateWindow(Config)
             end)
         end
 
-        -- عنصر Toggle مكتبي
         function Elements:AddToggle(Text, Default, Callback)
             local State = Default or false
             local TBtn = Instance.new("TextButton")
@@ -457,7 +443,6 @@ function Library:CreateWindow(Config)
             end)
         end
 
-        -- عنصر Slider مكتبي
         function Elements:AddSlider(Text, Min, Max, Default, Callback)
             local Value = Default or Min
             local SFrame = Instance.new("Frame")
@@ -550,3 +535,5 @@ function Library:CreateWindow(Config)
 
     return WindowFuncs
 end
+
+return Library
